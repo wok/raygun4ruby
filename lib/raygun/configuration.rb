@@ -67,7 +67,7 @@ module Raygun
         custom_data:                      {},
         enable_reporting:                 true,
         affected_user_method:             :current_user,
-        affected_user_identifier_methods: [ :email, :username, :id ],
+        affected_user_identifier_methods: { identifier: :id, email: :email, fullName: :name },
         filter_parameters:                DEFAULT_FILTER_PARAMETERS,
         proxy_settings:                   {}
       })

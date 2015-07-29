@@ -14,13 +14,22 @@ module Raygun
           user = controller.send(Raygun.configuration.affected_user_method)
 
           if user
-            identifier = if (m = Raygun.configuration.affected_user_identifier_methods.detect { |m| user.respond_to?(m) })
-              user.send(m)
+            methods = Raygun.configuration.affected_user_identifier_methods
+            if methods.is_a?( Hash )
+              data = {}
+              methods.each_pair do |raygun_key, user_method|
+                data[raygun_key] = user.send(user_method) if user.respond_to?( user_method )
+              end
             else
-              user
+              identifier = if (m = methods.detect { |m| user.respond_to?(m) })
+                user.send(m)
+              else
+                user
+              end
+              data = { identifier: identifier }
             end
 
-            env["raygun.affected_user"] = { :identifier => identifier }
+            env["raygun.affected_user"] = data
           end
           
         end
