@@ -57,9 +57,33 @@ module Raygun
         file_name, line_number, method = line.split(":")
         {
           lineNumber: line_number,
-          fileName:   file_name,
+          fileName:   pretty_path(file_name),
           methodName: method ? method.gsub(/^in `(.*?)'$/, "\\1") : "(none)"
         }
+      end
+      
+      # Based on BetterErrors::StackFrame
+      def pretty_path(file_name)
+        begin
+          # Indent with UTF NO-BREAK-SPACE so that lines are shown nicely in the Raygun UI
+          indent = "\u00a0\u00a0\u00a0\u00a0\u00a0"
+          # path starts with rails root -> remove the rails root
+          if file_name.index(Rails.root.to_s) == 0
+            file_name[(Rails.root.to_s.length + 1)..-1]
+            
+          # path is from a gem (add gem name + version)
+          elsif path = Gem.path.detect { |path| file_name.index(path) == 0 }
+            gem_name_and_version, path = file_name.sub("#{path}/gems/", "").split("/", 2)
+            /(?<gem_name>.+)-(?<gem_version>[\w.]+)/ =~ gem_name_and_version
+            "#{indent}#{gem_name} (#{gem_version}) #{path}"
+          
+          # don't know where this is coming from
+          else
+            "#{indent}#{file_name}"
+          end
+        rescue
+          file_name
+        end
       end
 
       def hostname
