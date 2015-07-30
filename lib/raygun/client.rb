@@ -48,8 +48,19 @@ module Raygun
         {
           className:  exception.class.to_s,
           message:    exception.message.to_s.encode('UTF-16', :undef => :replace, :invalid => :replace).encode('UTF-8'),
-          stackTrace: (exception.backtrace || []).map { |line| stack_trace_for(line) }
+          stackTrace: stack_trace(exception, app: true),
         }
+      end
+
+      def stack_trace(exception, app: true)
+        lines = (exception.backtrace || []).map { |line| stack_trace_for(line) }
+        lines.each do |line|
+          analyse_line(line)
+        end
+        if (app)
+          lines = lines.select{ |line| line[:className] == "app" }
+        end
+        lines
       end
 
       def stack_trace_for(line)
@@ -57,32 +68,36 @@ module Raygun
         file_name, line_number, method = line.split(":")
         {
           lineNumber: line_number,
-          fileName:   pretty_path(file_name),
-          methodName: method ? method.gsub(/^in `(.*?)'$/, "\\1") : "(none)"
+          fileName:   file_name,
+          methodName: method ? method.gsub(/^in `(.*?)'$/, "\\1") : "(none)",
+          className: "other"
         }
       end
       
       # Based on BetterErrors::StackFrame
-      def pretty_path(file_name)
+      def analyse_line(line)
+        file_name = line[:fileName]
         begin
           # Indent with UTF NO-BREAK-SPACE so that lines are shown nicely in the Raygun UI
-          indent = "\u00a0\u00a0\u00a0\u00a0\u00a0"
+          indent = ""
           # path starts with rails root -> remove the rails root
           if file_name.index(Rails.root.to_s) == 0
-            file_name[(Rails.root.to_s.length + 1)..-1]
+            line[:fileName] = file_name[(Rails.root.to_s.length + 1)..-1]
+            line[:className] = "app"
             
           # path is from a gem (add gem name + version)
           elsif path = Gem.path.detect { |path| file_name.index(path) == 0 }
             gem_name_and_version, path = file_name.sub("#{path}/gems/", "").split("/", 2)
             /(?<gem_name>.+)-(?<gem_version>[\w.]+)/ =~ gem_name_and_version
-            "#{indent}#{gem_name} (#{gem_version}) #{path}"
+            line[:fileName] = "#{indent}#{gem_name} (#{gem_version}) #{path}"
+            line[:className] = "gem"
           
           # don't know where this is coming from
           else
-            "#{indent}#{file_name}"
+            line[:fileName] = "#{indent}#{file_name}"
+            line[:className] = "other"
           end
         rescue
-          file_name
         end
       end
 
@@ -161,6 +176,7 @@ module Raygun
 
       # see http://raygun.io/raygun-providers/rest-json-api?v=1
       def build_payload_hash(exception_instance, env = {})
+        custom_handler = env.delete(:custom_handler)
         custom_data = env.delete(:custom_data) || {}
 
         error_details = {
@@ -172,6 +188,11 @@ module Raygun
             request:        request_information(env)
         }
 
+        begin
+          error_details[:userCustomData][:full_trace] = "Full Stack trace\n" + stack_trace(exception_instance, app: false ).map{|line| "#{line[:fileName]}:#{line[:lineNumber]} in `#{line[:methodName]}'"}.join("\n")
+        rescue
+        end
+        
         error_details.merge!(tags: error_tags) if error_tags_present?
         error_details.merge!(user: user_information(env)) if affected_user_present?(env)
 
