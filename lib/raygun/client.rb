@@ -196,6 +196,10 @@ module Raygun
         error_details.merge!(tags: error_tags) if error_tags_present?
         error_details.merge!(user: user_information(env)) if affected_user_present?(env)
 
+        if custom_handler && custom_handler.respond_to?(:raygun_before_send, true)
+          custom_handler.send(:raygun_before_send, error_details)
+        end
+
         {
           occurredOn: Time.now.utc.iso8601,
           details:    error_details
